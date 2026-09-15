@@ -4,13 +4,18 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 public class Auxiliar {
-    void timerSegundos(Integer segundos) throws InterruptedException {
-        Integer intervalo = (segundos * 1000 )/ 5;
+    void timerSegundos(Integer segundos) {
+        int intervalo = (segundos * 1000) / 5;
+
         for (int i = 0; i < 5; i++) {
-            System.out.print(".");
-            Thread.sleep(intervalo);
+            try {
+                Thread.sleep(intervalo);
+                System.out.print(".");
+            } catch (InterruptedException e) {
+                return;
+            }
         }
-        System.out.println(".");
+        System.out.println(); // Apenas quebra a linha no final
     }
 
     void tempo(){
