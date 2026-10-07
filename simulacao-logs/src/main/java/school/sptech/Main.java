@@ -1,15 +1,31 @@
 package school.sptech;
 
+import school.sptech.config.Jira;
+import org.springframework.jdbc.core.BeanPropertyRowMapper;
+
 import java.util.concurrent.ThreadLocalRandom;
 
 public class Main {
+
     public static void main(String[] args) throws Exception {
+
         Auxiliar metodo = new Auxiliar();
 
-        JiraService jiraService = new JiraService();
+        ConexaoBanco conexaoBanco = new ConexaoBanco();
+
+        var jdbcTemplate = conexaoBanco.getJdbcTemplate();
+
+        String sql = "SELECT * FROM servidor";
+
+        var servidores = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Servidor.class));
+
+        for (Servidor servidor : servidores) {
+            System.out.println(servidor);
+        }
 
         String[] componentes = {"Memória", "CPU", "Disco"};
         Integer[] porcentagem = {85, 90, 95};
+
         Integer componenteDaVez = ThreadLocalRandom.current().nextInt(0, 3);
         Integer porcentagemDaVez = ThreadLocalRandom.current().nextInt(0, 3);
 
@@ -19,15 +35,20 @@ public class Main {
         metodo.mensagem("[TRACE] Analisando e comparando valores", 3);
         metodo.mensagem("[INFO] Analise completa, realizando diagnostico", 1);
 
-        String mensagem = componentes[componenteDaVez] +
-                " em " + porcentagem[porcentagemDaVez] + "% de uso";
+        String mensagem = componentes[componenteDaVez] + " em " + porcentagem[porcentagemDaVez] + "% de uso";
 
         metodo.mensagem(mensagem, 1);
 
         metodo.mensagem("[TRACE] Criando ocorrencia no Jira", 3);
 
-        jiraService.criarChamado(mensagem);
+        Jira jira = new Jira(
+                "https://SEU-DOMINIO.atlassian.net",
+                "bruno.tita@sptech.achool",
+                "SEU-TOKEN"
+        );
 
-        metodo.mensagem("[INFO] Processo de analise ++e criação de ocorrencia completo");
+        jira.createIssue("SCRUM", mensagem, "Task");
+
+        metodo.mensagem("[INFO] Processo de analise e criação de ocorrencia completo");
     }
 }
