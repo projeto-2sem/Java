@@ -17,7 +17,7 @@ public class Main {
 
         String sql = "SELECT * FROM servidor";
 
-        var servidores = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Servidor.class));
+        List<Servidor> servidores = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Servidor.class));
 
         for (Servidor servidor : servidores) {
             System.out.println(servidor);
