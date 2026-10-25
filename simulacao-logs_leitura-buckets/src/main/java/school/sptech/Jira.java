@@ -1,4 +1,4 @@
-package school.sptech.config;
+package school.sptech;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;

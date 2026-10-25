@@ -1,7 +1,12 @@
 package school.sptech;
 
-import school.sptech.config.Jira;
+import school.sptech.Jira;
+import school.sptech.dto.IssueFieldsDto;
+import school.sptech.dto.IssueRequestDto;
+import school.sptech.dto.IssueTypeDto;
+import school.sptech.dto.ProjectDto;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.jdbc.core.JdbcTemplate;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.Bucket;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -13,55 +18,43 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
 import java.io.File;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Main {
 
-    private static final String nomeBucket = "amzn-datalake-medalion-sentry";
+    private static final String nomeBucket =
+            "amzn-datalake-medalion-sentry";
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
 
         Auxiliar metodo = new Auxiliar();
 
         ConexaoBanco conexaoBanco = new ConexaoBanco();
-
-        var jdbcTemplate = conexaoBanco.getJdbcTemplate();
+        JdbcTemplate jdbcTemplate = conexaoBanco.getJdbcTemplate();
 
         String sql = "SELECT * FROM servidor";
 
-        List<Servidor> servidores = jdbcTemplate.query(sql, new BeanPropertyRowMapper<>(Servidor.class));
+        List<Servidor> servidores = jdbcTemplate.query(
+                sql,
+                new BeanPropertyRowMapper<>(Servidor.class)
+        );
 
         for (Servidor servidor : servidores) {
             System.out.println(servidor);
         }
 
-        String[] componentes = {"Memória", "CPU", "Disco"};
-        Integer[] porcentagem = {85, 90, 95};
+        List<String> alertas = new ArrayList<>();
 
-        Integer componenteDaVez = ThreadLocalRandom.current().nextInt(0, 3);
-        Integer porcentagemDaVez = ThreadLocalRandom.current().nextInt(0, 3);
-
-        metodo.mensagem("[INFO] Novo aquivo de leitura registrado");
+        metodo.mensagem("[INFO] Novo arquivo de leitura registrado");
         metodo.mensagem("[TRACE] Iniciando leitura dos arquivos CSVs", 3);
         metodo.mensagem("[TRACE] Coletando parametros do Banco de Dados", 3);
         metodo.mensagem("[TRACE] Analisando e comparando valores", 3);
-        metodo.mensagem("[INFO] Analise completa, realizando diagnostico", 1);
 
-        String mensagem = componentes[componenteDaVez] + " em " + porcentagem[porcentagemDaVez] + "% de uso";
-
-        metodo.mensagem(mensagem, 1);
-
-        metodo.mensagem("[TRACE] Criando ocorrencia no Jira", 3);
-
-        Jira jira = new Jira(
-                "https://sentry-scada.atlassian.net",
-                "bruno.tita@sptech.school",
-                "ATATT3xFfGF0Dk6zNZQchkJWe3xwlqwtYx8v92mHPt_0MN6qrxNkMqDzHn7PkhpGZDijBfgfavsn_mHbXvRMlMDR2cQjJB4kpYsnbAeUM4XDUBfDWrGW2M4-k78XMtio0eqOuhU0NyhPs4uWbsnUMLgLww5RTG8Cr714Z4DyEsvQPHtWKCvcwGQ=16353D7F"
+        metodo.mensagem(
+                "[INFO] Analise completa, realizando diagnostico", 1
         );
-
-        jira.createIssue("KAN", mensagem, "Task");
-
-        metodo.mensagem("[INFO] Processo de analise e criação de ocorrencia completo");
 
         System.out.println("\n" + "=".repeat(60));
         System.out.println("INICIANDO LEITURA DAS CAMADAS DO DATA LAKE");
@@ -69,103 +62,381 @@ public class Main {
 
         S3Client s3Client = new S3Provider().getS3Client();
 
-        listarBucket(s3Client);
+        try {
 
-        List<String> camadasMedallion = List.of("bronze/", "prata/", "ouro/");
+            listarBucket(s3Client);
 
-        for (String camada : camadasMedallion) {
-            System.out.println("\n" + "=".repeat(60));
-            System.out.println("PROCESSANDO CAMADA " + camada.toUpperCase().replace("/", ""));
-            System.out.println("=".repeat(60) + "\n");
+            List<String> camadasMedallion =
+                    List.of("bronze/", "prata/", "ouro/");
 
-            lerConteudoCamada(s3Client, camada);
+            for (String camada : camadasMedallion) {
 
-            ListObjectsV2Request requisicao = ListObjectsV2Request.builder().bucket(nomeBucket).prefix(camada).build();
+                System.out.println("\n" + "=".repeat(60));
+                System.out.println(
+                        "PROCESSANDO CAMADA "
+                                + camada.toUpperCase().replace("/", "")
+                );
+                System.out.println("=".repeat(60) + "\n");
 
-            List<S3Object> objetos = s3Client.listObjectsV2(requisicao).contents();
+                lerConteudoCamada(s3Client, camada);
 
-            for (S3Object objeto : objetos) {
-                String s3Key = objeto.key();
-                if (s3Key.equals(camada)) continue;
+                ListObjectsV2Request requisicao =
+                        ListObjectsV2Request.builder()
+                                .bucket(nomeBucket)
+                                .prefix(camada)
+                                .build();
 
-                String nomeApenasDoArquivo = s3Key.substring(s3Key.lastIndexOf("/") + 1);
-                String downloadLocal = "download_" + camada.replace("/", "") + "_" + nomeApenasDoArquivo;
+                List<S3Object> objetos =
+                        s3Client.listObjectsV2(requisicao).contents();
 
-                //  fazerDownload(s3Client, s3Key, downloadLocal);
+                for (S3Object objeto : objetos) {
+
+                    String s3Key = objeto.key();
+
+                    if (s3Key.equals(camada)) {
+                        continue;
+                    }
+
+                    String nomeApenasDoArquivo =
+                            s3Key.substring(s3Key.lastIndexOf("/") + 1);
+
+                    String downloadLocal = "download_"
+                            + camada.replace("/", "")
+                            + "_" + nomeApenasDoArquivo;
+
+                    // fazerDownload(s3Client, s3Key, downloadLocal);
+
+                    if (camada.equals("ouro/")
+                            && nomeApenasDoArquivo
+                            .toLowerCase().endsWith(".csv")) {
+
+                        metodo.mensagem(
+                                "[INFO] Analisando arquivo "
+                                        + nomeApenasDoArquivo
+                        );
+
+                        GetObjectRequest getRequest =
+                                GetObjectRequest.builder()
+                                        .bucket(nomeBucket)
+                                        .key(s3Key)
+                                        .build();
+
+                        String conteudo = s3Client.getObject(
+                                getRequest,
+                                ResponseTransformer.toBytes()
+                        ).asUtf8String();
+
+                        analisarCSV(conteudo, jdbcTemplate, alertas);
+                    }
+                }
+            }
+
+        } catch (Exception e) {
+
+            System.err.println(
+                    "[ERRO] Falha na leitura do Data Lake: "
+                            + e.getMessage()
+            );
+
+            return;
+
+        } finally {
+            s3Client.close();
+        }
+
+        if (alertas.isEmpty()) {
+
+            metodo.mensagem("[INFO] Nenhum alerta encontrado.");
+
+        } else {
+
+            for (String alerta : alertas) {
+                metodo.mensagem(alerta, 1);
+            }
+
+            String url = System.getenv("JIRA_URL");
+            String email = System.getenv("JIRA_EMAIL");
+            String token = System.getenv("JIRA_API_TOKEN");
+
+            if (url != null && email != null && token != null) {
+
+                metodo.mensagem("[TRACE] Criando ocorrencia no Jira", 3);
+
+                Jira jira = new Jira(url, email, token);
+
+                for (String alerta : alertas) {
+                    try {
+                        jira.createIssue("KAN", alerta, "Task");
+
+                        System.out.println("[INFO] Ocorrência criada no Jira.");
+
+                    } catch (java.io.IOException e) {
+                        System.err.println("[ERRO] Falha de comunicação com o Jira: " + e.getMessage());
+
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+
+                        System.err.println("[ERRO] A criação da ocorrência foi interrompida.");
+
+                        break;
+
+                    } catch (RuntimeException e) {
+                        System.err.println("[ERRO] O Jira retornou um erro: " + e.getMessage());
+                    }
+                }
             }
         }
 
-
+        metodo.mensagem("[INFO] Processo de analise e criação de ocorrencia completo");
     }
 
+    public static void analisarCSV(String conteudo, JdbcTemplate jdbcTemplate, List<String> alertas) {
+
+        String[] linhas = conteudo.split("\\R");
+
+        if (linhas.length < 2) {
+
+            System.out.println("[INFO] CSV sem dados para analisar.");
+
+            return;
+        }
+
+        String[] cabecalho = linhas[0].replace("\uFEFF", "").split(";");
+
+        Map<String, Integer> colunas = new HashMap<>();
+
+        for (int i = 0; i < cabecalho.length; i++) {
+            colunas.put(cabecalho[i].trim(), i);
+        }
+
+        if (!colunas.containsKey("hostname") || !colunas.containsKey("mac")) {
+
+            System.out.println("[ERRO] CSV sem as colunas hostname e mac.");
+
+            return;
+        }
+
+        String sql = "SELECT tm.apelido "
+                + "FROM servidor s "
+                + "JOIN servidor_medicao sm "
+                + "ON sm.servidorId = s.idServidor "
+                + "JOIN tipo_medicao tm "
+                + "ON tm.idTipoMedicao = sm.tipoMedicaoId "
+                + "WHERE s.hostname = ? AND s.mac = ? "
+                + "AND sm.ativo = 1";
+
+        Map<String, String> mapeamento = new HashMap<>();
+
+        mapeamento.put("CPU", "cpu_percent");
+        mapeamento.put("MEMORIA", "memory_percent");
+        mapeamento.put("DISCO_LEITURA", "disk_read_bytes");
+        mapeamento.put("DISCO_ESCRITA", "disk_write_bytes");
+        mapeamento.put("REDE_RECEBIMENTO", "net_bytes_recv");
+        mapeamento.put("REDE_ENVIO", "net_bytes_sent");
+
+        for (int i = 1; i < linhas.length; i++) {
+
+            if (linhas[i].trim().isEmpty()) {
+                continue;
+            }
+
+            String[] valores = linhas[i].split(";", -1);
+
+            if (valores.length < cabecalho.length) {
+
+                System.out.println("[ERRO] Linha " + (i + 1) + " incompleta.");
+
+                continue;
+            }
+
+            String hostname = valores[colunas.get("hostname")].trim();
+
+            String mac = valores[colunas.get("mac")].trim();
+
+            List<String> medicoesAtivas = jdbcTemplate.query(
+                    sql,
+                    (rs, linha) -> rs.getString("apelido"),
+                    hostname,
+                    mac
+            );
+
+            if (medicoesAtivas.isEmpty()) {
+
+                System.out.println("[INFO] Nenhuma medicao ativa para " + hostname);
+
+                continue;
+            }
+
+            for (String medicao : medicoesAtivas) {
+
+                String nomeColuna = mapeamento.get(medicao);
+
+                if (nomeColuna == null || !colunas.containsKey(nomeColuna)) {
+                    continue;
+                }
+
+                String textoValor = valores[colunas.get(nomeColuna)].trim();
+
+                if (textoValor.isEmpty()) {
+                    continue;
+                }
+
+                double valor;
+
+                try {
+                    valor = Double.parseDouble(textoValor);
+                } catch (NumberFormatException e) {
+
+                    System.out.println("[ERRO] Valor invalido para " + medicao);
+
+                    continue;
+                }
+
+                String unidade = "";
+
+                if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
+                    unidade = "%";
+                }
+
+                System.out.println("[INFO] Servidor: " + hostname + " | Medicao: " + medicao
+                        + " | Valor: " + valor + unidade
+                );
+
+                if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
+
+                    if (valor > 90) {
+                        alertas.add("[CRITICO] " + medicao + " em " + valor + "% no servidor " + hostname);
+
+                    } else if (valor > 80) {
+                        alertas.add("[ALERTA] " + medicao + " em " + valor + "% no servidor " + hostname);
+                    }
+                }
+            }
+        }
+    }
 
     public static void listarBucket(S3Client s3Client) {
+
         try {
             List<Bucket> buckets = s3Client.listBuckets().buckets();
+
             System.out.println("Lista de buckets:");
+
             for (Bucket bucket : buckets) {
                 System.out.println("- " + bucket.name());
             }
+
         } catch (S3Exception e) {
-            System.err.println("Erro ao listar buckets: " + e.getMessage());
+            System.err.println(
+                    "Erro ao listar buckets: " + e.getMessage()
+            );
         }
     }
 
-    public static void fazerUpload(S3Client s3Client, String prefixo, File arquivoLocal) {
-        System.out.println("\nUPLOAD PARA PREFIXO: " + prefixo.toUpperCase());
+    public static void fazerUpload(
+            S3Client s3Client,
+            String prefixo,
+            File arquivoLocal) {
+
+        System.out.println(
+                "\nUPLOAD PARA PREFIXO: " + prefixo.toUpperCase()
+        );
 
         try {
             String s3Key = prefixo + arquivoLocal.getName();
 
-            PutObjectRequest putObjectRequest = PutObjectRequest.builder().bucket(nomeBucket).key(s3Key).build();
+            PutObjectRequest putObjectRequest =
+                    PutObjectRequest.builder()
+                            .bucket(nomeBucket)
+                            .key(s3Key)
+                            .build();
 
-            s3Client.putObject(putObjectRequest, RequestBody.fromFile(arquivoLocal));
-            System.out.println("Upload concluído com sucesso! Chave S3: " + s3Key);
+            s3Client.putObject(
+                    putObjectRequest,
+                    RequestBody.fromFile(arquivoLocal)
+            );
+
+            System.out.println(
+                    "Upload concluído com sucesso! Chave S3: " + s3Key
+            );
+
         } catch (Exception e) {
-            System.err.println(" Falha ao realizar o upload: " + e.getMessage());
+            System.err.println(
+                    "Falha ao realizar o upload: " + e.getMessage()
+            );
         }
     }
 
-    public static void lerConteudoCamada(S3Client s3Client, String prefixo) {
-        System.out.println("\nLEITURA DO PREFIXO: " + prefixo.toUpperCase());
+    public static void lerConteudoCamada(
+            S3Client s3Client,
+            String prefixo) {
+
+        System.out.println(
+                "\nLEITURA DO PREFIXO: " + prefixo.toUpperCase()
+        );
 
         try {
-            ListObjectsV2Request requisicao = ListObjectsV2Request.builder().bucket(nomeBucket).prefix(prefixo).build();
+            ListObjectsV2Request requisicao =
+                    ListObjectsV2Request.builder()
+                            .bucket(nomeBucket)
+                            .prefix(prefixo)
+                            .build();
 
-            List<S3Object> objetos = s3Client.listObjectsV2(requisicao).contents();
+            List<S3Object> objetos =
+                    s3Client.listObjectsV2(requisicao).contents();
 
             if (objetos.isEmpty()) {
-                System.out.println("Nenhum arquivo encontrado no prefixo " + prefixo);
+                System.out.println(
+                        "Nenhum arquivo encontrado no prefixo " + prefixo
+                );
                 return;
             }
 
             for (S3Object objeto : objetos) {
-                if (objeto.key().equals(prefixo)) continue;
 
-                System.out.println("\n Arquivo S3: " + objeto.key());
-                System.out.println(" Tamanho: " + objeto.size() + " bytes");
+                if (objeto.key().equals(prefixo)) {
+                    continue;
+                }
 
-                GetObjectRequest getRequest = GetObjectRequest.builder().bucket(nomeBucket).key(objeto.key()).build();
+                System.out.println("\nArquivo S3: " + objeto.key());
+                System.out.println("Tamanho: " + objeto.size() + " bytes");
 
-                String conteudo = s3Client.getObject(getRequest, ResponseTransformer.toBytes()).asUtf8String();
+                GetObjectRequest getRequest =
+                        GetObjectRequest.builder()
+                                .bucket(nomeBucket)
+                                .key(objeto.key())
+                                .build();
 
-                System.out.println(" Conteúdo do arquivo:");
+                String conteudo = s3Client.getObject(
+                        getRequest,
+                        ResponseTransformer.toBytes()
+                ).asUtf8String();
+
+                System.out.println("Conteúdo do arquivo:");
                 System.out.println(conteudo);
             }
+
         } catch (S3Exception e) {
-            System.err.println(" Erro de S3 ao listar camada " + prefixo + ": " + e.awsErrorDetails().errorMessage());
+            System.err.println(
+                    "Erro de S3 ao listar camada " + prefixo
+                            + ": " + e.getMessage()
+            );
+
         } catch (Exception e) {
-            System.err.println(" Erro geral ao ler camada " + prefixo + ": " + e.getMessage());
+            System.err.println(
+                    "Erro geral ao ler camada " + prefixo
+                            + ": " + e.getMessage()
+            );
         }
     }
 
-        /*
+    /*
     public static void fazerDownload(
             S3Client s3Client,
             String s3Key,
-            String caminhoDestinoLocal
-    ) {
-        System.out.println("\n DOWNLOAD DO ARQUIVO: " + s3Key);
+            String caminhoDestinoLocal) {
+
+        System.out.println("\nDOWNLOAD DO ARQUIVO: " + s3Key);
 
         try {
             File arquivoDestino = new File(caminhoDestinoLocal);
