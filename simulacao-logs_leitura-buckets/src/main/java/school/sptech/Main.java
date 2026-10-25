@@ -20,6 +20,8 @@ import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
 import school.sptech.Medicao;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class Main {
 
@@ -47,7 +49,7 @@ public class Main {
         List<String> alertas = new ArrayList<>();
 
         metodo.mensagem("[INFO] Novo arquivo de leitura registrado");
-        metodo.mensagem("[TRACE] Iniciando leitura dos arquivos CSVs", 3);
+        metodo.mensagem("[TRACE] Iniciando leitura dos arquivos JSONs", 3);
         metodo.mensagem("[TRACE] Coletando parametros do Banco de Dados", 3);
         metodo.mensagem("[TRACE] Analisando e comparando valores", 3);
 
@@ -107,7 +109,7 @@ public class Main {
 
                     if (camada.equals("ouro/")
                             && nomeApenasDoArquivo
-                            .toLowerCase().endsWith(".csv")) {
+                            .toLowerCase().endsWith(".json")) {
 
                         metodo.mensagem(
                                 "[INFO] Analisando arquivo "
@@ -125,7 +127,7 @@ public class Main {
                                 ResponseTransformer.toBytes()
                         ).asUtf8String();
 
-                        analisarCSV(conteudo, jdbcTemplate, alertas);
+                        analisarJSON(conteudo, jdbcTemplate, alertas);
                     }
                 }
             }
@@ -143,8 +145,9 @@ public class Main {
             s3Client.close();
         }
 
-        if (alertas.isEmpty()) {
+        System.out.println("[DEBUG] Total de alertas encontrados: " + alertas.size());
 
+        if (alertas.isEmpty()) {
             metodo.mensagem("[INFO] Nenhum alerta encontrado.");
 
         } else {
@@ -153,70 +156,64 @@ public class Main {
                 metodo.mensagem(alerta, 1);
             }
 
-            String url = System.getenv("https://sentry-scada.atlassian.net");
-            String email = System.getenv("bruno.tita@sptech.school");
-            String token = System.getenv("ATATT3xFfGF0DfX4TFOtB_CkzCfnwmK7DEOYUG6goDsg0EDZqwdfFo4wQglIFEAf5pxcG-WXOfP_QrG4zB_t6ARn7uGB-V0qxW99KnaKI8jNLO7_rioNmITA4m5o5Frjq3Z7RAxTlqsSOoSzWUmnZYqUhmGmvhI2Xv6eOLCHcz3W7yLo3v1AYBg=B312EF7E");
+            String url = System.getenv("JIRA_URL");
+            String email = System.getenv("JIRA_EMAIL");
+            String token = System.getenv("JIRA_API_TOKEN");
 
-            if (url != null && email != null && token != null) {
+            System.out.println("[DEBUG] URL configurada: " + (url != null));
+            System.out.println("[DEBUG] Email configurado: " + (email != null));
+            System.out.println("[DEBUG] Token configurado: " + (token != null));
 
+            if (url == null || email == null || token == null) {
+                System.err.println("[ERRO] Configure as variáveis de ambiente do Jira.");
+            } else {
                 metodo.mensagem("[TRACE] Criando ocorrencia no Jira", 3);
 
                 Jira jira = new Jira(url, email, token);
 
                 for (String alerta : alertas) {
                     try {
-                        jira.createIssue("KAN", alerta, "Task");
-
-                        System.out.println("[INFO] Ocorrência criada no Jira.");
+                        String resposta = jira.createIssue("KAN", alerta, "Task");
+                        System.out.println("[INFO] Ocorrencia criada no Jira: " + resposta);
 
                     } catch (java.io.IOException e) {
-                        System.err.println("[ERRO] Falha de comunicação com o Jira: " + e.getMessage());
+                        System.err.println("[ERRO] Falha de comunicacao com o Jira: " + e.getMessage());
 
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
-
-                        System.err.println("[ERRO] A criação da ocorrência foi interrompida.");
+                        System.err.println("[ERRO] Criacao da ocorrencia interrompida.");
 
                         break;
 
                     } catch (RuntimeException e) {
-                        System.err.println("[ERRO] O Jira retornou um erro: " + e.getMessage());
+                        System.err.println("[ERRO] Jira retornou um erro: " + e.getMessage());
                     }
                 }
             }
         }
 
+
         metodo.mensagem("[INFO] Processo de analise e criação de ocorrencia completo");
     }
 
-    public static void analisarCSV(String conteudo, JdbcTemplate jdbcTemplate, List<String> alertas) {
 
-        String[] linhas = conteudo.split("\\R");
 
-        if (linhas.length < 2) {
-            System.out.println("[INFO] CSV sem dados para analisar.");
+    public static void analisarJSON(String conteudo, JdbcTemplate jdbcTemplate, List<String> alertas) {
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode raiz;
+
+        try {
+            raiz = mapper.readTree(conteudo);
+        } catch (Exception e) {
+            System.out.println("[ERRO] Falha ao ler o JSON: " + e.getMessage());
+
             return;
         }
 
-        String[] cabecalho = linhas[0].replace("\uFEFF", "").split(";");
+        if (raiz == null || raiz.isEmpty()) {
+            System.out.println("[INFO] JSON sem dados para analisar.");
 
-        int indiceHostname = -1;
-        int indiceMac = -1;
-
-        for (int i = 0; i < cabecalho.length; i++) {
-            cabecalho[i] = cabecalho[i].trim();
-
-            if (cabecalho[i].equals("hostname")) {
-                indiceHostname = i;
-            } else if (cabecalho[i].equals("mac")) {
-                indiceMac = i;
-            }
-        }
-
-        if (indiceHostname == -1 || indiceMac == -1) {
-            System.out.println(
-                    "[ERRO] CSV sem as colunas hostname e mac."
-            );
             return;
         }
 
@@ -231,22 +228,24 @@ public class Main {
                 "WHERE s.hostname = ? AND s.mac = ? " +
                 "AND sm.ativo = 1";
 
-        for (int i = 1; i < linhas.length; i++) {
+        JsonNode registros;
 
-            if (linhas[i].trim().isEmpty()) {
+        if (raiz.isArray()) {
+            registros = raiz;
+        } else {
+            registros = mapper.createArrayNode().add(raiz);
+        }
+
+        for (JsonNode registro : registros) {
+
+            String hostname = registro.path("hostname").asText("");
+            String mac = registro.path("mac").asText("");
+
+            if (hostname.isEmpty() || mac.isEmpty()) {
+                System.out.println("[ERRO] Registro sem hostname ou MAC.");
+
                 continue;
             }
-
-            String[] valores = linhas[i].split(";", -1);
-
-            if (valores.length < cabecalho.length) {
-                System.out.println("[ERRO] Linha " + (i + 1) + " incompleta.");
-
-                continue;
-            }
-
-            String hostname = valores[indiceHostname].trim();
-            String mac = valores[indiceMac].trim();
 
             List<Medicao> medicoesAtivas = jdbcTemplate.query(
                     sql,
@@ -254,6 +253,9 @@ public class Main {
                     hostname,
                     mac
             );
+
+            System.out.println("[DEBUG] Hostname do JSON: " + hostname);
+            System.out.println("[DEBUG] MAC do JSON: " + mac);
 
             if (medicoesAtivas.isEmpty()) {
                 System.out.println("[INFO] Nenhuma medicao ativa para " + hostname);
@@ -266,6 +268,7 @@ public class Main {
                 String medicao = medicaoConfig.getApelido();
                 Double limiteAtencao = medicaoConfig.getLimiteAtencao();
                 Double limiteCritico = medicaoConfig.getLimiteCritico();
+
                 String nomeColuna = "";
 
                 if (medicao.equals("CPU")) {
@@ -284,42 +287,34 @@ public class Main {
 
                 if (nomeColuna.isEmpty()) {
                     System.out.println("[INFO] Medicao sem mapeamento: " + medicao);
+
                     continue;
                 }
 
-                int indiceColuna = -1;
+                JsonNode campo = registro.path(nomeColuna);
 
-                for (int j = 0; j < cabecalho.length; j++) {
-                    if (cabecalho[j].equals(nomeColuna)) {
-                        indiceColuna = j;
-                        break;
-                    }
-                }
+                if (campo.isMissingNode() || campo.isNull() || campo.asText().trim().isEmpty()) {
+                    System.out.println("[INFO] Campo nao encontrado no JSON: " + nomeColuna);
 
-                if (indiceColuna == -1) {
-                    System.out.println("[INFO] Coluna nao encontrada no CSV: " + nomeColuna);
-                    continue;
-                }
-
-                String textoValor = valores[indiceColuna].trim();
-
-                if (textoValor.isEmpty()) {
                     continue;
                 }
 
                 double valor;
 
                 try {
-                    valor = Double.parseDouble(textoValor);
+                    valor = Double.parseDouble(campo.asText().trim());
                 } catch (NumberFormatException e) {
                     System.out.println("[ERRO] Valor invalido para " + medicao);
+
                     continue;
                 }
 
-                String unidade = "";
+                String unidade;
 
                 if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
                     unidade = "%";
+                } else {
+                    unidade = " bytes";
                 }
 
                 System.out.println("[INFO] Servidor: " + hostname + " | Medicao: " + medicao
@@ -327,21 +322,20 @@ public class Main {
 
                 if (limiteAtencao == null || limiteCritico == null) {
                     System.out.println("[ERRO] Limites nao configurados para " + medicao);
+
                     continue;
                 }
 
-                if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
+                if (valor >= limiteCritico) {
+                    alertas.add("[CRITICO] " + medicao + " em " + valor + unidade + " no servidor " + hostname);
 
-                    if (valor >= limiteCritico) {
-                        alertas.add("[CRITICO] " + medicao + " em " + valor + "% no servidor " + hostname);
-
-                    } else if (valor >= limiteAtencao) {
-                        alertas.add("[ALERTA] " + medicao + " em " + valor + "% no servidor " + hostname);
-                    }
+                } else if (valor >= limiteAtencao) {
+                    alertas.add("[ALERTA] " + medicao + " em " + valor + unidade + " no servidor " + hostname);
                 }
             }
         }
     }
+
 
     public static void listarBucket(S3Client s3Client) {
 
@@ -500,4 +494,5 @@ public class Main {
         }
     }
     */
+
 }
