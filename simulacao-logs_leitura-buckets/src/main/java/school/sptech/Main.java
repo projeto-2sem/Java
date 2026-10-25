@@ -152,9 +152,9 @@ public class Main {
                 metodo.mensagem(alerta, 1);
             }
 
-            String url = System.getenv("JIRA_URL");
-            String email = System.getenv("JIRA_EMAIL");
-            String token = System.getenv("JIRA_API_TOKEN");
+            String url = System.getenv("https://sentry-scada.atlassian.net");
+            String email = System.getenv("bruno.tita@sptech.school");
+            String token = System.getenv("ATATT3xFfGF0DfX4TFOtB_CkzCfnwmK7DEOYUG6goDsg0EDZqwdfFo4wQglIFEAf5pxcG-WXOfP_QrG4zB_t6ARn7uGB-V0qxW99KnaKI8jNLO7_rioNmITA4m5o5Frjq3Z7RAxTlqsSOoSzWUmnZYqUhmGmvhI2Xv6eOLCHcz3W7yLo3v1AYBg=B312EF7E");
 
             if (url != null && email != null && token != null) {
 
