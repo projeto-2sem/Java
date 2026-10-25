@@ -19,6 +19,7 @@ import software.amazon.awssdk.core.sync.ResponseTransformer;
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
+import school.sptech.Medicao;
 
 public class Main {
 
@@ -219,14 +220,16 @@ public class Main {
             return;
         }
 
-        String sql = "SELECT tm.apelido "
-                + "FROM servidor s "
-                + "JOIN servidor_medicao sm "
-                + "ON sm.servidorId = s.idServidor "
-                + "JOIN tipo_medicao tm "
-                + "ON tm.idTipoMedicao = sm.tipoMedicaoId "
-                + "WHERE s.hostname = ? AND s.mac = ? "
-                + "AND sm.ativo = 1";
+        String sql = "SELECT tm.apelido, " +
+                "sm.limiteAtencao AS limiteAtencao, " +
+                "sm.limiteCritico AS limiteCritico " +
+                "FROM servidor s " +
+                "JOIN servidor_medicao sm " +
+                "ON sm.servidorId = s.idServidor " +
+                "JOIN tipo_medicao tm " +
+                "ON tm.idTipoMedicao = sm.tipoMedicaoId " +
+                "WHERE s.hostname = ? AND s.mac = ? " +
+                "AND sm.ativo = 1";
 
         for (int i = 1; i < linhas.length; i++) {
 
@@ -245,9 +248,9 @@ public class Main {
             String hostname = valores[indiceHostname].trim();
             String mac = valores[indiceMac].trim();
 
-            List<String> medicoesAtivas = jdbcTemplate.query(
+            List<Medicao> medicoesAtivas = jdbcTemplate.query(
                     sql,
-                    (rs, linha) -> rs.getString("apelido"),
+                    new BeanPropertyRowMapper<>(Medicao.class),
                     hostname,
                     mac
             );
@@ -258,8 +261,11 @@ public class Main {
                 continue;
             }
 
-            for (String medicao : medicoesAtivas) {
+            for (Medicao medicaoConfig : medicoesAtivas) {
 
+                String medicao = medicaoConfig.getApelido();
+                Double limiteAtencao = medicaoConfig.getLimiteAtencao();
+                Double limiteCritico = medicaoConfig.getLimiteCritico();
                 String nomeColuna = "";
 
                 if (medicao.equals("CPU")) {
@@ -278,7 +284,6 @@ public class Main {
 
                 if (nomeColuna.isEmpty()) {
                     System.out.println("[INFO] Medicao sem mapeamento: " + medicao);
-
                     continue;
                 }
 
@@ -293,7 +298,6 @@ public class Main {
 
                 if (indiceColuna == -1) {
                     System.out.println("[INFO] Coluna nao encontrada no CSV: " + nomeColuna);
-
                     continue;
                 }
 
@@ -309,7 +313,6 @@ public class Main {
                     valor = Double.parseDouble(textoValor);
                 } catch (NumberFormatException e) {
                     System.out.println("[ERRO] Valor invalido para " + medicao);
-
                     continue;
                 }
 
@@ -319,15 +322,20 @@ public class Main {
                     unidade = "%";
                 }
 
-                System.out.println(
-                        "[INFO] Servidor: " + hostname + " | Medicao: " + medicao + " | Valor: " + valor + unidade
-                );
+                System.out.println("[INFO] Servidor: " + hostname + " | Medicao: " + medicao
+                        + " | Valor: " + valor + unidade);
+
+                if (limiteAtencao == null || limiteCritico == null) {
+                    System.out.println("[ERRO] Limites nao configurados para " + medicao);
+                    continue;
+                }
 
                 if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
 
-                    if (valor > 90) {
+                    if (valor >= limiteCritico) {
                         alertas.add("[CRITICO] " + medicao + " em " + valor + "% no servidor " + hostname);
-                    } else if (valor > 80) {
+
+                    } else if (valor >= limiteAtencao) {
                         alertas.add("[ALERTA] " + medicao + " em " + valor + "% no servidor " + hostname);
                     }
                 }
