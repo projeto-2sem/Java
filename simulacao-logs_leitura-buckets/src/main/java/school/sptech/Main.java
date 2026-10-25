@@ -19,8 +19,6 @@ import software.amazon.awssdk.core.sync.ResponseTransformer;
 import java.io.File;
 import java.util.List;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
 
 public class Main {
 
@@ -195,24 +193,29 @@ public class Main {
         String[] linhas = conteudo.split("\\R");
 
         if (linhas.length < 2) {
-
             System.out.println("[INFO] CSV sem dados para analisar.");
-
             return;
         }
 
         String[] cabecalho = linhas[0].replace("\uFEFF", "").split(";");
 
-        Map<String, Integer> colunas = new HashMap<>();
+        int indiceHostname = -1;
+        int indiceMac = -1;
 
         for (int i = 0; i < cabecalho.length; i++) {
-            colunas.put(cabecalho[i].trim(), i);
+            cabecalho[i] = cabecalho[i].trim();
+
+            if (cabecalho[i].equals("hostname")) {
+                indiceHostname = i;
+            } else if (cabecalho[i].equals("mac")) {
+                indiceMac = i;
+            }
         }
 
-        if (!colunas.containsKey("hostname") || !colunas.containsKey("mac")) {
-
-            System.out.println("[ERRO] CSV sem as colunas hostname e mac.");
-
+        if (indiceHostname == -1 || indiceMac == -1) {
+            System.out.println(
+                    "[ERRO] CSV sem as colunas hostname e mac."
+            );
             return;
         }
 
@@ -225,15 +228,6 @@ public class Main {
                 + "WHERE s.hostname = ? AND s.mac = ? "
                 + "AND sm.ativo = 1";
 
-        Map<String, String> mapeamento = new HashMap<>();
-
-        mapeamento.put("CPU", "cpu_percent");
-        mapeamento.put("MEMORIA", "memory_percent");
-        mapeamento.put("DISCO_LEITURA", "disk_read_bytes");
-        mapeamento.put("DISCO_ESCRITA", "disk_write_bytes");
-        mapeamento.put("REDE_RECEBIMENTO", "net_bytes_recv");
-        mapeamento.put("REDE_ENVIO", "net_bytes_sent");
-
         for (int i = 1; i < linhas.length; i++) {
 
             if (linhas[i].trim().isEmpty()) {
@@ -243,15 +237,13 @@ public class Main {
             String[] valores = linhas[i].split(";", -1);
 
             if (valores.length < cabecalho.length) {
-
                 System.out.println("[ERRO] Linha " + (i + 1) + " incompleta.");
 
                 continue;
             }
 
-            String hostname = valores[colunas.get("hostname")].trim();
-
-            String mac = valores[colunas.get("mac")].trim();
+            String hostname = valores[indiceHostname].trim();
+            String mac = valores[indiceMac].trim();
 
             List<String> medicoesAtivas = jdbcTemplate.query(
                     sql,
@@ -261,7 +253,6 @@ public class Main {
             );
 
             if (medicoesAtivas.isEmpty()) {
-
                 System.out.println("[INFO] Nenhuma medicao ativa para " + hostname);
 
                 continue;
@@ -269,13 +260,44 @@ public class Main {
 
             for (String medicao : medicoesAtivas) {
 
-                String nomeColuna = mapeamento.get(medicao);
+                String nomeColuna = "";
 
-                if (nomeColuna == null || !colunas.containsKey(nomeColuna)) {
+                if (medicao.equals("CPU")) {
+                    nomeColuna = "cpu_percent";
+                } else if (medicao.equals("MEMORIA")) {
+                    nomeColuna = "memory_percent";
+                } else if (medicao.equals("DISCO_LEITURA")) {
+                    nomeColuna = "disk_read_bytes";
+                } else if (medicao.equals("DISCO_ESCRITA")) {
+                    nomeColuna = "disk_write_bytes";
+                } else if (medicao.equals("REDE_RECEBIMENTO")) {
+                    nomeColuna = "net_bytes_recv";
+                } else if (medicao.equals("REDE_ENVIO")) {
+                    nomeColuna = "net_bytes_sent";
+                }
+
+                if (nomeColuna.isEmpty()) {
+                    System.out.println("[INFO] Medicao sem mapeamento: " + medicao);
+
                     continue;
                 }
 
-                String textoValor = valores[colunas.get(nomeColuna)].trim();
+                int indiceColuna = -1;
+
+                for (int j = 0; j < cabecalho.length; j++) {
+                    if (cabecalho[j].equals(nomeColuna)) {
+                        indiceColuna = j;
+                        break;
+                    }
+                }
+
+                if (indiceColuna == -1) {
+                    System.out.println("[INFO] Coluna nao encontrada no CSV: " + nomeColuna);
+
+                    continue;
+                }
+
+                String textoValor = valores[indiceColuna].trim();
 
                 if (textoValor.isEmpty()) {
                     continue;
@@ -286,7 +308,6 @@ public class Main {
                 try {
                     valor = Double.parseDouble(textoValor);
                 } catch (NumberFormatException e) {
-
                     System.out.println("[ERRO] Valor invalido para " + medicao);
 
                     continue;
@@ -298,15 +319,14 @@ public class Main {
                     unidade = "%";
                 }
 
-                System.out.println("[INFO] Servidor: " + hostname + " | Medicao: " + medicao
-                        + " | Valor: " + valor + unidade
+                System.out.println(
+                        "[INFO] Servidor: " + hostname + " | Medicao: " + medicao + " | Valor: " + valor + unidade
                 );
 
                 if (medicao.equals("CPU") || medicao.equals("MEMORIA")) {
 
                     if (valor > 90) {
                         alertas.add("[CRITICO] " + medicao + " em " + valor + "% no servidor " + hostname);
-
                     } else if (valor > 80) {
                         alertas.add("[ALERTA] " + medicao + " em " + valor + "% no servidor " + hostname);
                     }
