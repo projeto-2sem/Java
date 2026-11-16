@@ -13,15 +13,23 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring.boot.version>3.5.7</spring.boot.version>
     </properties>
 
     <dependencies>
+
+        <!-- Spring Boot Web: criação da API -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <version>${spring.boot.version}</version>
+        </dependency>
 
         <!-- Spring JDBC -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-jdbc</artifactId>
-            <version>6.2.10</version>
+            <version>6.2.12</version>
         </dependency>
 
         <!-- AWS S3 -->
@@ -29,13 +37,6 @@
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>s3</artifactId>
             <version>2.27.21</version>
-        </dependency>
-
-        <!-- Logs -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>1.7.36</version>
         </dependency>
 
         <!-- Conexao com banco -->
@@ -59,26 +60,46 @@
             <version>2.17.2</version>
         </dependency>
 
+        <!-- Versao compativel do SLF4J com Spring Boot -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.17</version>
+        </dependency>
+
+
     </dependencies>
 
     <build>
         <plugins>
+
+            <!-- Compilacao com Java 21 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.14.1</version>
+            </plugin>
+
+            <!-- Geracao do JAR executavel -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.3.0</version>
+
                 <executions>
                     <execution>
                         <phase>package</phase>
                         <goals>
                             <goal>shade</goal>
                         </goals>
+
                         <configuration>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>school.sptech.Main</mainClass>
                                 </transformer>
                             </transformers>
+
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
@@ -94,6 +115,7 @@
                     </execution>
                 </executions>
             </plugin>
+
         </plugins>
     </build>
 
