@@ -179,11 +179,14 @@ public class Main {
                 for (String alerta : alertas) {
                     try {
                         String prioridade = "Medium";
+                        String tipoAlertaBanco = "atencao";
 
                         if (alerta.startsWith("[CRITICO]")) {
                             prioridade = "Highest";
+                            tipoAlertaBanco = "critico";
                         }
 
+                        // 1. Envia para o Jira
                         String resposta = jira.createIssue(
                                 "KAN",
                                 alerta,
@@ -191,21 +194,43 @@ public class Main {
                                 "Task",
                                 prioridade
                         );
-
                         System.out.println("[INFO] Ocorrencia criada no Jira: " + resposta);
 
+//                        ENVIO PARA O BANCO
+
+                        String tipoAlertaBanco = alerta.contains("[CRITICO]") ? "critico" : "atencao";
+
+                        String[] partes = alerta.split(" em ");
+                        String componenteBruto = partes[0].replace("[CRITICO] ", "").replace("[ALERTA] ", "").trim();
+                        String componente = componenteBruto.toLowerCase();
+
+                        if (componente.contains("cpu")) {
+                            componente = "cpu";
+                        } else if (componente.contains("memoria")) {
+                            componente = "ram";
+                        } else if (componente.contains("disco")) {
+                            componente = "disco";
+                        }
+
+                        String hostname = partes[1].split(" no servidor ")[1];
+
+                        Integer idServidor = null;
+                        for (Servidor s : servidores) {
+                            if (s.getHostname().equals(hostname)) {
+                                idServidor = s.getIdServidor();
+                                break;
+                            }
+                        }
+
+                        salvarAlertaNoBanco(jdbcTemplate, idServidor, componente, tipoAlertaBanco);
+
                     } catch (java.io.IOException e) {
-
                         System.err.println("[ERRO] Falha de comunicacao com o Jira: " + e.getMessage());
-
                     } catch (InterruptedException e) {
-
                         Thread.currentThread().interrupt();
                         System.err.println("[ERRO] Criacao da ocorrencia interrompida.");
                         break;
-
                     } catch (RuntimeException e) {
-
                         System.err.println("[ERRO] Jira retornou um erro: " + e.getMessage());
                     }
                 }
@@ -355,12 +380,9 @@ public class Main {
                 }
 
                 if (valor >= limiteCritico) {
-
-                    alertas.add("[CRITICO] " + medicao + " em " + valor + unidade + " no servidor " + hostname);
-
+                    alertas.add("[CRITICO] " + medicao + " em " + valor + unidade + " no servidor " + hostname + " (MAC: " + mac + ")");
                 } else if (valor >= limiteAtencao) {
-
-                    alertas.add("[ALERTA] " + medicao + " em " + valor + unidade + " no servidor " + hostname);
+                    alertas.add("[ALERTA] " + medicao + " em " + valor + unidade + " no servidor " + hostname + " (MAC: " + mac + ")");
                 }
             }
         }
@@ -521,5 +543,14 @@ public class Main {
             return "Medium";
         }
         return null;
+    }
+
+    public static void salvarAlertaNoBanco(JdbcTemplate jdbcTemplate, String idServidor, String componente, String tipoAlerta) {
+        String sql = "INSERT INTO alertas (servidorId, componente, tipo_alerta) VALUES (?, ?, ?)";
+        try {
+            jdbcTemplate.update(sql, idServidor, componente, tipoAlerta);
+        } catch (Exception e) {
+            System.err.println("[ERRO] Falha ao salvar alerta no banco: " + e.getMessage());
+        }
     }
 }
