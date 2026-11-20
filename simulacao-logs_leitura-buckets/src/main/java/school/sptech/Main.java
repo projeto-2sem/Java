@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import school.sptech.Medicao;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import school.sptech.relatorio.GeradorHtml;
+import school.sptech.relatorio.ConversorPdf;
 
 public class Main {
 
@@ -198,7 +200,6 @@ public class Main {
 
 //                        ENVIO PARA O BANCO
 
-                        String tipoAlertaBanco = alerta.contains("[CRITICO]") ? "critico" : "atencao";
 
                         String[] partes = alerta.split(" em ");
                         String componenteBruto = partes[0].replace("[CRITICO] ", "").replace("[ALERTA] ", "").trim();
@@ -235,6 +236,33 @@ public class Main {
                     }
                 }
             }
+        }
+
+        String nomeArquivo = "relatorio-sentry.pdf";
+
+        GeradorHtml geradorHtml = new GeradorHtml();
+
+        String html = geradorHtml.gerarHtmlRelatorio(alertas);
+
+        ConversorPdf conversorPdf = new ConversorPdf();
+
+        conversorPdf.converterHtmlParaPdf(html, nomeArquivo);
+
+        File arquivo = new File(nomeArquivo);
+
+        if (arquivo.exists()) {
+
+            S3Client s3Relatorio = new S3Provider().getS3Client();
+
+            try {
+                fazerUpload(s3Relatorio, "relatorios/", arquivo);
+
+            } finally {
+                s3Relatorio.close();
+            }
+
+        } else {
+            System.out.println("[ERRO] Arquivo PDF não encontrado.");
         }
 
         metodo.mensagem("[INFO] Processo de analise e criação de ocorrencia completo");
@@ -545,7 +573,7 @@ public class Main {
         return null;
     }
 
-    public static void salvarAlertaNoBanco(JdbcTemplate jdbcTemplate, String idServidor, String componente, String tipoAlerta) {
+    public static void salvarAlertaNoBanco(JdbcTemplate jdbcTemplate, Integer idServidor, String componente, String tipoAlerta) {
         String sql = "INSERT INTO alertas (servidorId, componente, tipo_alerta) VALUES (?, ?, ?)";
         try {
             jdbcTemplate.update(sql, idServidor, componente, tipoAlerta);

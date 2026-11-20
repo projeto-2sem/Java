@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>Relatório Sentry</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            color: #172033;
+            background-color: #0B1624;
+        }
+
+        h1 {
+            color: #2F81F7;
+        }
+
+        h2, p {
+            color: #fff;
+        }
+
+        .cabecalho {
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+
+        .indicadores {
+            width: 60%;
+            margin-bottom: 30px;
+            border-collapse: separate;
+            border-spacing: 15px 0;
+        }
+
+        .card {
+            width: 33%;
+            padding: 5px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            background-color: #111c30;
+        }
+
+        .card h2 {
+            font-size: 14px;
+        }
+
+        .card p {
+            font-size: 25px;
+            font-weight: bold;
+        }
+
+        .critico {
+            color: red;
+        }
+
+        .atencao {
+            color: yellow;
+        }
+
+        table {
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        th, td {
+            border: 1px solid #ccc;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #0B1624;
+            color: white;
+        }
+
+        td {
+            color: white;
+            background-color: #111c30;
+        }
+
+        .rodape {
+            margin-top: 40px;
+            font-size: 12px;
+            color: #777;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="cabecalho">
+    <h1>Relatório de Monitoramento Sentry</h1>
+    <p>Data de geração: <span th:text="${dataGeracao}"></span></p>
+</div>
+
+<h2>Resumo dos alertas</h2>
+
+<table class="indicadores">
+    <tr>
+        <td class="card">
+            <h2>Total de alertas</h2>
+            <p th:text="${totalAlertas}"></p>
+        </td>
+
+        <td class="card">
+            <h2>Alertas críticos</h2>
+            <p class="critico" th:text="${alertasCriticos}"></p>
+        </td>
+
+        <td class="card">
+            <h2>Alertas de atenção</h2>
+            <p class="atencao" th:text="${alertasAtencao}"></p>
+        </td>
+    </tr>
+</table>
+
+<h2>Alertas emitidos:</h2>
+
+<table>
+    <thead>
+    <tr>
+        <th>Alertas</th>
+    </tr>
+    </thead>
+
+    <tbody>
+    <tr th:each="alerta : ${alertas}">
+        <td th:text="${alerta}"></td>
+    </tr>
+    </tbody>
+</table>
+
+<div class="rodape">
+    <p>[BETA] Não nos responsabilizamos por possíveis falhas no relatório</p>
+</div>
+
+</body>
+</html>
