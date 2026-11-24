@@ -1,9 +1,9 @@
-
 package school.sptech;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import java.io.IOException;
 import java.net.URI;
@@ -39,86 +39,149 @@ public class Jira {
     public JsonNode buscarIncidentes()
             throws IOException, InterruptedException {
 
-        String jql = "project = KAN ORDER BY created DESC";
+        String jql = "project = KAN AND resolution = Unresolved ORDER BY created DESC";
 
-        String consulta = baseUrl
-                + "/rest/api/3/search/jql"
-                + "?jql=" + URLEncoder.encode(jql, StandardCharsets.UTF_8)
-                + "&fields=" + URLEncoder.encode(
-                "summary,priority,created,status",
-                StandardCharsets.UTF_8
-        )
-                + "&maxResults=100";
+        ArrayNode todasIssues = objectMapper.createArrayNode();
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(consulta))
-                .timeout(Duration.ofSeconds(60))
-                .header("Authorization", authHeader)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
+        String nextPageToken = null;
+        boolean ultimaPagina = false;
 
-        HttpResponse<String> response = httpClient.send(
-                request,
-                HttpResponse.BodyHandlers.ofString()
-        );
+        while (!ultimaPagina) {
 
-        int status = response.statusCode();
+            String consulta = baseUrl
+                    + "/rest/api/3/search/jql"
+                    + "?jql=" + URLEncoder.encode(jql, StandardCharsets.UTF_8)
+                    + "&fields=" + URLEncoder.encode(
+                    "summary,priority,created,status",
+                    StandardCharsets.UTF_8
+            )
+                    + "&maxResults=100";
 
-        if (status >= 200 && status < 300) {
-            return objectMapper.readTree(response.body());
+            if (nextPageToken != null) {
+                consulta += "&nextPageToken="
+                        + URLEncoder.encode(nextPageToken, StandardCharsets.UTF_8);
+            }
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(consulta))
+                    .timeout(Duration.ofSeconds(60))
+                    .header("Authorization", authHeader)
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(
+                    request,
+                    HttpResponse.BodyHandlers.ofString()
+            );
+
+            int status = response.statusCode();
+
+            if (status >= 200 && status < 300) {
+
+                JsonNode pagina = objectMapper.readTree(response.body());
+
+                JsonNode issues = pagina.path("issues");
+
+                if (issues.isArray()) {
+                    todasIssues.addAll((ArrayNode) issues);
+                }
+
+                ultimaPagina = pagina.path("isLast").asBoolean(true);
+
+                if (!ultimaPagina) {
+
+                    String proximoToken = pagina.path("nextPageToken").asText(null);
+
+                    if (proximoToken == null || proximoToken.isEmpty()
+                            || proximoToken.equals(nextPageToken)) {
+
+                        ultimaPagina = true;
+
+                    } else {
+
+                        nextPageToken = proximoToken;
+                    }
+                }
+
+                System.out.println(
+                        "[INFO] Ocorrências encontradas até agora: "
+                                + todasIssues.size()
+                );
+
+            } else {
+
+                throw new RuntimeException(
+                        "Erro ao buscar incidentes no Jira: "
+                                + status + " - " + response.body()
+                );
+            }
         }
 
-        throw new RuntimeException(
-                "Erro ao buscar incidentes no Jira: "
-                        + status + " - " + response.body()
-        );
+        ObjectNode resultado = objectMapper.createObjectNode();
+        resultado.set("issues", todasIssues);
+
+        return resultado;
     }
 
-    public String createIssue(String projectKey, String summary,
-                              String description, String issueType,
-                              String priorityName)
+    public String createIssue(
+            String projectKey,
+            String summary,
+            String description,
+            String issueType,
+            String priorityName)
             throws IOException, InterruptedException {
 
         String priorityId = buscarPrioridadeId(priorityName);
 
-        ObjectNode dados = objectMapper.createObjectNode();
-        ObjectNode fields = dados.putObject("fields");
+        ObjectNode campos = objectMapper.createObjectNode();
 
-        ObjectNode project = fields.putObject("project");
-        project.put("key", projectKey);
+        ObjectNode projeto = objectMapper.createObjectNode();
+        projeto.put("key", projectKey);
 
-        fields.put("summary", summary);
+        ObjectNode tipo = objectMapper.createObjectNode();
+        tipo.put("name", issueType);
 
-        ObjectNode type = fields.putObject("issuetype");
-        type.put("name", issueType);
-
-        ObjectNode priority = fields.putObject("priority");
-        priority.put("id", priorityId);
-
-        ObjectNode descricao = fields.putObject("description");
-        descricao.put("type", "doc");
-        descricao.put("version", 1);
-
-        ObjectNode paragrafo = objectMapper.createObjectNode();
-        paragrafo.put("type", "paragraph");
+        ObjectNode prioridade = objectMapper.createObjectNode();
+        prioridade.put("id", priorityId);
 
         ObjectNode texto = objectMapper.createObjectNode();
         texto.put("type", "text");
         texto.put("text", description);
 
-        paragrafo.putArray("content").add(texto);
-        descricao.putArray("content").add(paragrafo);
+        ObjectNode paragrafo = objectMapper.createObjectNode();
+        paragrafo.put("type", "paragraph");
+        paragrafo.set(
+                "content",
+                objectMapper.createArrayNode().add(texto)
+        );
 
-        String json = objectMapper.writeValueAsString(dados);
+        ObjectNode descricao = objectMapper.createObjectNode();
+        descricao.put("type", "doc");
+        descricao.put("version", 1);
+        descricao.set(
+                "content",
+                objectMapper.createArrayNode().add(paragrafo)
+        );
+
+        campos.set("project", projeto);
+        campos.put("summary", summary);
+        campos.set("issuetype", tipo);
+        campos.set("priority", prioridade);
+        campos.set("description", descricao);
+
+        ObjectNode requisicaoJson = objectMapper.createObjectNode();
+        requisicaoJson.set("fields", campos);
+
+        String corpo = objectMapper.writeValueAsString(requisicaoJson);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/rest/api/3/issue"))
                 .timeout(Duration.ofSeconds(60))
                 .header("Authorization", authHeader)
-                .header("Content-Type", "application/json")
                 .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(json))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(corpo))
                 .build();
 
         HttpResponse<String> response = httpClient.send(
@@ -133,15 +196,18 @@ public class Jira {
         }
 
         throw new RuntimeException(
-                "Jira request failed: " + status + " - " + response.body()
+                "Erro ao criar ocorrência no Jira: "
+                        + status + " - " + response.body()
         );
     }
+
 
     private String buscarPrioridadeId(String priorityName)
             throws IOException, InterruptedException {
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/rest/api/3/priority"))
+                .timeout(Duration.ofSeconds(60))
                 .header("Authorization", authHeader)
                 .header("Accept", "application/json")
                 .GET()
@@ -152,24 +218,27 @@ public class Jira {
                 HttpResponse.BodyHandlers.ofString()
         );
 
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+
+            JsonNode prioridades = objectMapper.readTree(response.body());
+
+            for (JsonNode prioridade : prioridades) {
+
+                String nome = prioridade.path("name").asText();
+
+                if (nome.equalsIgnoreCase(priorityName)) {
+                    return prioridade.path("id").asText();
+                }
+            }
+
             throw new RuntimeException(
-                    "Erro ao buscar prioridades: " + response.body()
+                    "Prioridade não encontrada no Jira: " + priorityName
             );
         }
 
-        JsonNode prioridades = objectMapper.readTree(response.body());
-
-        for (JsonNode prioridade : prioridades) {
-            String nome = prioridade.path("name").asText("");
-
-            if (nome.equalsIgnoreCase(priorityName)) {
-                return prioridade.path("id").asText();
-            }
-        }
-
         throw new RuntimeException(
-                "Prioridade nao encontrada no Jira: " + priorityName
+                "Erro ao buscar prioridades no Jira: "
+                        + response.statusCode() + " - " + response.body()
         );
     }
 }

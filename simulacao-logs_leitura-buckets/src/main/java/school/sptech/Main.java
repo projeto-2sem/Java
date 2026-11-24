@@ -162,7 +162,7 @@ public class Main {
 
             String url = System.getenv("JIRA_URL");
             String email = System.getenv("JIRA_EMAIL");
-            String token = System.getenv("JIRA_API_TOKEN");
+            String token = System.getenv("JIRA_TOKEN");
 
             System.out.println("[DEBUG] URL configurada: " + (url != null));
             System.out.println("[DEBUG] Email configurado: " + (email != null));
@@ -198,11 +198,19 @@ public class Main {
                         );
                         System.out.println("[INFO] Ocorrencia criada no Jira: " + resposta);
 
+                        String jiraKey = new ObjectMapper()
+                                .readTree(resposta)
+                                .path("key")
+                                .asText();
+
 //                        ENVIO PARA O BANCO
 
 
                         String[] partes = alerta.split(" em ");
-                        String componenteBruto = partes[0].replace("[CRITICO] ", "").replace("[ALERTA] ", "").trim();
+
+                        String componenteBruto = partes[0].replace("[CRITICO] ", "")
+                                .replace("[ALERTA] ", "");
+
                         String componente = componenteBruto.toLowerCase();
 
                         if (componente.contains("cpu")) {
@@ -213,7 +221,7 @@ public class Main {
                             componente = "disco";
                         }
 
-                        String hostname = partes[1].split(" no servidor ")[1];
+                        String hostname = partes[1].split(" no servidor ")[1].split(" \\(MAC:")[0];
 
                         Integer idServidor = null;
                         for (Servidor s : servidores) {
@@ -223,7 +231,14 @@ public class Main {
                             }
                         }
 
-                        salvarAlertaNoBanco(jdbcTemplate, idServidor, componente, tipoAlertaBanco);
+                        if (idServidor == null) {
+                            System.out.println("[ERRO] Servidor não encontrado no banco: " + hostname);
+                            continue;
+                        }
+
+                        salvarAlertaNoBanco(jdbcTemplate, idServidor, componente, tipoAlertaBanco, jiraKey,
+                                alerta, prioridade
+                        );
 
                     } catch (java.io.IOException e) {
                         System.err.println("[ERRO] Falha de comunicacao com o Jira: " + e.getMessage());
@@ -573,10 +588,32 @@ public class Main {
         return null;
     }
 
-    public static void salvarAlertaNoBanco(JdbcTemplate jdbcTemplate, Integer idServidor, String componente, String tipoAlerta) {
-        String sql = "INSERT INTO alertas (servidorId, componente, tipo_alerta) VALUES (?, ?, ?)";
+    public static void salvarAlertaNoBanco(
+            JdbcTemplate jdbcTemplate,
+            Integer idServidor,
+            String componente,
+            String tipoAlerta,
+            String jiraKey,
+            String descricao,
+            String prioridade) {
+
+        String sql = "INSERT INTO alertas " +
+                "(servidorId, componente, tipo_alerta, jira_key, descricao, prioridade) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+
         try {
-            jdbcTemplate.update(sql, idServidor, componente, tipoAlerta);
+            jdbcTemplate.update(
+                    sql,
+                    idServidor,
+                    componente,
+                    tipoAlerta,
+                    jiraKey,
+                    descricao,
+                    prioridade
+            );
+
+            System.out.println("[INFO] Alerta salvo no banco: " + jiraKey);
+
         } catch (Exception e) {
             System.err.println("[ERRO] Falha ao salvar alerta no banco: " + e.getMessage());
         }
